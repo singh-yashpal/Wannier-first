@@ -1,0 +1,21 @@
+c
+c **********************************************************************
+c
+      SUBROUTINE STOPIT
+c
+c abort the program in a clean way
+c
+        logical exist
+c        inquire(file='error',exist=exist)
+c        if (.not.exist) then
+           open (unit=11, file='ERROR_NRLMOL')
+           write(11,*) 'Error  ...'
+           close(11)
+c       INCLUDE 'mpif.h'
+       PRINT '(A)','Aborting MPI ...'
+       
+
+!       CALL MPI_ABORT(MPI_COMM_WORLD,0,IERR)
+       CALL FLUSH(6)
+       STOP
+      END
