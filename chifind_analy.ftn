@@ -26,24 +26,6 @@ C
 
        ETOTOLD=0.0d0
 
-!       OPEN(119,FILE='WFOUT1',FORM='UNFORMATTED',STATUS='OLD')
-!
-!       READ(119)
-!       READ(119)
-!       READ(119)
-!       READ(119)
-!       itot=0
-!       do ispn=1,NSPN
-!       do irep=1,nrep
-!          READ(119)(nocco(irep,ispn),nbasold(irep))
-!          READ(119)(occoup(ioc+itot),ioc=1,nocco(irep,ispn))
-!          ALLOCATE(PSIOLD(nbasold(irep)))
-!          do iwf=1,nocco(irep,ispn)
-!          READ(119)(PSIOLD(ibas,iwf,irep,ispn),ibas=1,nbasold(irep))
-!          enddo
-!       enddo
-!       enddo
-
        INQUIRE(FILE='MUNS', EXIST=FILE_EXISTS)
        IF (FILE_EXISTS) THEN
           OPEN(90, FILE='MUNS', STATUS='OLD')
