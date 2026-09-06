@@ -1,0 +1,10 @@
+  2 # PERIODIC DIMENSION
+-2.32    2.32 # X-BOUNDARIES
+-2.01    2.01 # X-BOUNDARIES
+-2.5    2.5 # X-BOUNDARIES
+     4.64 0.000    0.000000  
+     2.32  4.02   0.000000  
+     0.0 0.0 0.0
+    40.000000             # LOG(CUTOFF ACCURACY)
+0 1
+3 3 0

@@ -1,0 +1,128 @@
+      implicit real*8(a-h,o-z)
+      dimension HAM(1300,1300),OVER(1300,1300),EVAL(1300),SC1(1300)
+      dimension OVER1(1300,1300),HAM1(1300,1300),SC2(1300)
+      dimension UNITMAT(1300,1300)
+
+      NBAS=1188
+      NDH=1300
+
+!      read(*,*)NBAS
+
+      open(300,file="HAMOVER00",form='unformatted')
+!      open(400,file="OVER00",form='unformatted')
+!      open(500,file="HAM00",form='unformatted')
+      rewind(300)
+!      rewind(400)
+!      rewind(500)
+
+!      open(301,file="HAMOVER01",form='unformatted')
+!      open(401,file="OVER01",form='unformatted')
+!      open(501,file="HAM01",form='unformatted')
+!      rewind(401)
+!      rewind(301)
+!      rewind(501)
+
+      HAM=0.0d0
+      OVER=0.0d0
+      OVER1=0.0d0
+
+      read(300)HAM
+      read(300)OVER
+      read(300)OVER1
+
+!      do ii=1,10
+!      do jj=1,10
+!       print *,OVER(ii,jj),OVER1(ii,jj),(OVER(ii,jj)-OVER1(ii,jj))
+!      enddo
+!      enddo
+!      stop
+!      write(400)OVER
+!      write(500)HAM
+
+!      HAM1=0.0d0
+!      OVER1=0.0d0
+!      read(301)HAM1
+!      read(301)OVER1
+!      write(401)OVER1
+!      write(501)HAM1
+!      do ii=NBAS,1,-1
+!      do jj=NBAS,1,-1
+!      HAM1(NBAS-ii+1,NBAS-jj+1)=HAM(ii,jj)
+!      OVER1(NBAS-ii+1,NBAS-jj+1)=OVER(ii,jj)
+!      enddo
+!      enddo
+!      HAM=OVER
+
+!       OVER=0.0d0
+!      HAM=0.0d0
+!       do i=1,NBAS
+!       OVER(i,i)=1.0d0
+!       HAM(i,i)=1.0d0
+!       enddo
+!
+!       do ibas=1,NBAS
+!      HAM(ibas,5)=HAM(ibas,4)
+!      HAM(5,ibas)=HAM(4,ibas)
+!      enddo
+
+!       jeq=0
+!       jeq1=0
+!       do ii=1,NBAS
+!       do jj=ii,NBAS
+!!        if(OVER(ii,jj).ne.OVER(jj,ii))jeq=jeq+1
+!!         !OVER2(ii,jj)=OVER(ii,jj)
+!!         !OVER2(jj,ii)=OVER(ii,jj)
+!       if(HAM(ii,jj).ne.HAM(jj,ii))jeq=jeq+1
+!       if(OVER(ii,jj).ne.OVER(jj,ii))jeq1=jeq1+1
+!       enddo
+!       enddo
+!       print *,jeq,jeq1
+!!       
+!       print *,jeq
+!       jeq=0
+!       do ii=1,NBAS
+!       sumrow=0.0d0
+!       sumrow1=0.0d0
+!       do jj=1,NBAS
+!       sumrow=sumrow+OVER(ii,jj)
+!       sumrow1=sumrow+OVER(jj,ii)
+!       enddo
+!       if(sumrow.ne.sumrow1)jeq=jeq+1
+!       print *,ii,sumrow,sumrow1
+!       enddo
+!       print *,jeq
+!       stop
+!       do kk=706,NBAS
+!       print 100,(HAM(kk,jj),jj=1,834)
+!       print *,'------------------------------------'
+!       print 100,(OVER(kk,jj),jj=1,834)
+!       !print *,HAM(706,706),OVER(706,706)
+!       enddo
+!       stop
+!       NBAS=731
+!       UNITMAT=0.0d0
+!       do i=1,NBAS
+!       UNITMAT(i,i)=1.0d0
+!       enddo
+       CALL DIAGGE(NDH,NBAS,HAM,OVER,EVAL,SC1,1)
+!!       DELTA=0.0d0
+!!       CALL DIAGSVD(NDH,NBAS,NBAS,HAM,OVER,EVAL,SC1,SC2,DELTA,1)
+!
+       print *,'AFTER DIAGGE=',NDH,NBAS
+       print *, 'Evalues of overlap', (eval(i),i=1,20)
+!
+!       UNITMAT=0.0d0
+!       do i=1,NBAS
+!       UNITMAT(i,i)=1.0d0
+!       enddo
+!       EVAL=0.0d0
+!       CALL DIAGGE(NDH,NBAS,OVER1,UNITMAT,EVAL,SC1,1)
+!       print *,'AFTER DIAGGE2=',NDH,NBAS
+!       print *, 'Evalues of overlap', (eval(i),i=1,20)
+!
+       PRINT*,'XI-FIND EIGENVALUES:',ICHIFIND,FCT2,ERRDOT,ERRMAX
+       PRINT*,'CHIFIND: NMSH, NBAS:',NMSH,NBAS
+       PRINT '(8F15.6)',(EVAL(IBAS)   ,IBAS=1,NBAS)
+
+  100  format(6g12.3)
+       end

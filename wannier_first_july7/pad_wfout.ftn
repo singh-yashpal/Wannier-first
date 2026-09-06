@@ -1,0 +1,120 @@
+      PROGRAM PAD_WFOUT_STREAM
+
+      IMPLICIT NONE
+
+      INTEGER, PARAMETER :: MAXSPN = 2
+
+      INTEGER NSPN, NWF, N_REP
+      INTEGER NWFS(MAXSPN)
+      INTEGER ISPN, I_REP, IWF, I, I_OCC
+      INTEGER ITOT
+      INTEGER NEW_NS_TOT
+      INTEGER N_OCC, NS_OLD, NS_NEW
+
+      DOUBLE PRECISION, ALLOCATABLE :: EVLOCC(:)
+      DOUBLE PRECISION, ALLOCATABLE :: OCC(:)
+      DOUBLE PRECISION, ALLOCATABLE :: PSI_OLD(:)
+      DOUBLE PRECISION, ALLOCATABLE :: PSI_NEW(:)
+
+      OPEN(97,FILE='WFOLD',FORM='UNFORMATTED',STATUS='OLD')
+      OPEN(98,FILE='WFOUT',FORM='UNFORMATTED',STATUS='UNKNOWN')
+
+      REWIND(97)
+      REWIND(98)
+
+      PRINT *, 'Enter new NS_TOT value:'
+      READ(*,*) NEW_NS_TOT
+
+!     Header
+      READ(97) NSPN
+      WRITE(98) NSPN
+
+      READ(97) NWF,(NWFS(ISPN),ISPN=1,NSPN)
+      WRITE(98) NWF,(NWFS(ISPN),ISPN=1,NSPN)
+
+      ALLOCATE(EVLOCC(NWF))
+      READ(97) (EVLOCC(IWF), IWF=1,NWF)
+      WRITE(98) (EVLOCC(IWF), IWF=1,NWF)
+
+      READ(97) N_REP
+
+!     Safety check: this code assumes only I_REP = 1 exists
+      IF (N_REP .NE. 1) THEN
+        PRINT *, '----------------------------------------'
+        PRINT *, 'ERROR: Unsupported WFOUT structure.'
+        PRINT *, 'Expected N_REP = 1'
+        PRINT *, 'Found    N_REP = ', N_REP
+        PRINT *, 'This padding code assumes I_REP = 1 only.'
+        PRINT *, '----------------------------------------'
+        STOP
+      END IF
+
+      WRITE(98) N_REP
+
+      ITOT = 0
+
+      DO ISPN = 1, NSPN
+        DO I_REP = 1, N_REP
+
+!         Extra safety check
+          IF (I_REP .NE. 1) THEN
+            PRINT *, 'ERROR: Unexpected I_REP = ', I_REP
+            PRINT *, 'This code only supports I_REP = 1.'
+            STOP
+          END IF
+
+          READ(97) N_OCC, NS_OLD
+
+          IF (NEW_NS_TOT .LT. NS_OLD) THEN
+            PRINT *, 'ERROR: New NS_TOT cannot be smaller.'
+            PRINT *, 'Old NS_TOT = ', NS_OLD
+            PRINT *, 'New NS_TOT = ', NEW_NS_TOT
+            STOP
+          END IF
+
+          NS_NEW = NEW_NS_TOT
+
+          WRITE(98) N_OCC, NS_NEW
+
+!         Occupancies: preserve original record structure
+          ALLOCATE(OCC(N_OCC))
+
+          READ(97) (OCC(I_OCC), I_OCC=1,N_OCC)
+          WRITE(98) (OCC(I_OCC), I_OCC=1,N_OCC)
+
+          DEALLOCATE(OCC)
+
+          ITOT = ITOT + N_OCC
+
+!         Wavefunction coefficients
+          ALLOCATE(PSI_OLD(NS_OLD))
+          ALLOCATE(PSI_NEW(NS_NEW))
+
+          DO IWF = 1, N_OCC
+
+            READ(97) (PSI_OLD(I), I=1,NS_OLD)
+
+            PSI_NEW = 0.0D0
+
+            DO I = 1, NS_OLD
+              PSI_NEW(I) = PSI_OLD(I)
+            END DO
+
+!           Write one complete coefficient record
+            WRITE(98) (PSI_NEW(I), I=1,NS_NEW)
+
+          END DO
+
+          DEALLOCATE(PSI_OLD)
+          DEALLOCATE(PSI_NEW)
+
+        END DO
+      END DO
+
+      CLOSE(97)
+      CLOSE(98)
+
+      PRINT *, 'Created WFOUT successfully.'
+      PRINT *, 'New NS_TOT = ', NEW_NS_TOT
+
+      END PROGRAM PAD_WFOUT_STREAM

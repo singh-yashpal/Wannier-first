@@ -17,7 +17,7 @@ subroutine rewrite_symbol(ncalc,mode_run,imesh,ierr)
     integer :: atom_counts(max_types), atom_count1(max_types)
     integer :: nxyz, nineq, nuce, nucn, nexec, iinequ
     integer :: ngauss, ncon1, ncon2, igauss
-    integer :: lgmin, lgmax, lgauss
+    integer :: lgmin, lgmax, lgauss,iatms
     integer :: mcalc,mode_run,imesh,ierr,ncalc,perax
     real(8) :: x, y, z, ucut, theta, RANG, pi, barcut, barsht
     real(8) :: BBOUND(3,2),TVEC(3,3)
@@ -26,8 +26,6 @@ subroutine rewrite_symbol(ncalc,mode_run,imesh,ierr)
 !    common /PTRANS/ BBOUND, TVEC, theta, perax, RSPHWD, NXYZ
 
     pi=4.0d0*atan(1.0d0)
-    INQUIRE(FILE='ISYMTOT1',EXIST=EXIST)
-    IF (EXIST) GOTO 999
 
     RSPHWD=40.0d0
     tvec = 0.0d0
@@ -64,6 +62,9 @@ subroutine rewrite_symbol(ncalc,mode_run,imesh,ierr)
     enddo
     enddo
     close(9)
+
+    INQUIRE(FILE='ISYMTOT1',EXIST=EXIST)
+    IF (EXIST) GOTO 999
 
     ! Initialize
     num_types = 0
@@ -167,12 +168,22 @@ subroutine rewrite_symbol(ncalc,mode_run,imesh,ierr)
     enddo
     close(20)
 
-!    do j=1,num_types
-!    do i=1,atom_count1(j)
-!    print *,(coords(k,i,j),k=1,3)
-!    enddo
-!    enddo
+    iatms=0
+    do j=1,num_types
+    do i=1,atom_count1(j)
+     iatms=iatms+1
+    enddo
+    enddo
 
+    open(401,file='CELL.DAT',status='unknown')
+    write(401,*)iatms
+    write(401,*)
+    do j=1,num_types
+    do i=1,atom_count1(j)
+     write (401,*)(coords(k,i,j),k=1,3)
+    enddo
+    enddo
+    close(401)
   
 !    print *, "Translated atom positions for neighboring cells:"
     do j = 1, num_types  ! Loop over atom types
@@ -394,10 +405,12 @@ close(27)
         print*,'END OF REWRITE_SYMBOL'
         call system('cp ISYMTOT1 ISYMTOT')
 !        call system('cp INPUT1 INPUT')
-!        call system('cp SYMTOT1 SYMTOT')
+        call system('cp SYMTOT1 SYMTOT')
 
         ierr=-1
        call symbol(mcalc,mode_run,imesh,ierr)
+       !call stopit
+       return
 end 
 
 !======================================================================================

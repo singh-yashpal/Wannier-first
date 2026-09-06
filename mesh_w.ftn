@@ -30,6 +30,7 @@
         COMMON/REPLICA/NMSHW,NDCELL,MMSH1,NATMS,
      &   ZWATM(1000),RATMS(3,1000),ITSCF
         COMMON/COULDW/NANG,ANG(3,MAX_ANG),DOMEGANG(MAX_ANG),RAD_SPH
+        COMMON/TEMPW/AMSH(3,500),ATWD(3,1000)
         COMMON/PTRANS/TVEC(3,3),atheta,iraxis,NXYZ,iwx,iwy,iwz
         DIMENSION ratm(3,1000),ZATMS(100),vin(3),vout(3)
         DIMENSION BBOUND(3,2)
@@ -120,6 +121,9 @@
           READ(99)(WMSH(I),I=1,NMSH)
           CLOSE(99)
           
+          goto 113 
+
+
           IF (JCALC.EQ.ICALC) THEN
            CALL GTTIME(TIME2)
            CALL REORMSH
@@ -1573,7 +1577,20 @@ c
         CALL PAMMESH(2,BOX,0.0D0,0)
 c
 c
+ 113   continue
+
        PRINT '(A,I10)','TOTAL NUMBER OF MESH POINTS IN CC= NMSH',NMSH
+
+
+!       COMMON/NUCLEI/RIDT(3,MAX_IDENT),RCNT(3,MX_CNT)
+!     &  ,IFUIDT(MAX_IDENT),IFUCNT(MX_CNT),NIDENT,NCNT
+!       COMMON/BASET/ZELC(MAX_FUSET),ZNUC(MAX_FUSET)
+!     &  ,BFCON(MAX_BARE,MAX_CON,LDIM,MAX_FUSET)
+!     &  ,BFALP(MAX_BARE,MAX_FUSET)
+!     &  ,N_BARE(MAX_FUSET),N_CON(LDIM,MAX_FUSET)
+!     &  ,LSYMMAX(MAX_FUSET),N_POS(MAX_FUSET),NFNCT
+
+!       print *,'NFNCT, MAX_FUSET', NFNCT, ZNUC(1),ZNUC(2)
 
        sumvol=0.0d0
        DO ii=1,NMSH
@@ -1582,113 +1599,50 @@ c
 
        PRINT *,'VOL_WMSH, EXPECTED',sumvol,EXPECTED
 
-! Testing if the MESH is outside central cell.
-!       jcount=0
-!       do jj=1,NMSH
-!       if(RMSH(1,jj).GT.BOXMOL(1,2))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       if(RMSH(1,jj).LT.BOXMOL(1,1))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       if(RMSH(2,jj).GT.BOXMOL(2,2))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       if(RMSH(2,jj).LT.BOXMOL(2,1))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       if(RMSH(3,jj).GT.BOXMOL(3,2))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       if(RMSH(3,jj).LT.BOXMOL(3,1))then
-!               jcount=jcount+1
-!         print *,'RMSH',(RMSH(kk,jj),kk=1,3)
-!       endif
-!       enddo
-!       print *,'OUTSIDE_WD',jcount
+!       open(99,file='CELL.DAT',status='old')
+       open(99,file='XMOL.DAT',status='old')
+       rewind(99)
+       read(99,*)natoms
+       read(99,*)
+       NATMS=0
+       JMSH = 0
+       do ii=1,natoms
+          !read(99,*)ratx,raty,ratz
+          read(99,*)dum,ratx,raty,ratz
+          if(abs(dum).gt.0.1d0)then
+          NATMS=NATMS+1
+          JMSH=JMSH+1
+          !Converting back to Bohr
+          ratm(1,NATMS)=ratx/0.529177D0
+          ratm(2,NATMS)=raty/0.529177D0
+          ratm(3,NATMS)=ratz/0.529177D0
+          ZATMS(NATMS)=dum
+          ZWATM(JMSH)=dum
+          ATWD(1,JMSH)=ratx/0.529177D0
+          ATWD(2,JMSH)=raty/0.529177D0
+          ATWD(3,JMSH)=ratz/0.529177D0
+          endif
+       enddo
+       close(99)
 
-! NMSHW: Total mesh points in the central cell.
-
-!       errmax=0.0d0
-!       do ii=1,NMSH
-!        dist11=0.0d0
-!        rr1=RMSH(1,ii)
-!        rr2=RMSH(2,ii)
-!        rr3=RMSH(3,ii)
-!        dist11=dsqrt(rr1**2+rr2**2+rr3**2)
-!        print *,'ccgrid0',dist11
-!        errmax=max(dist11,errmax)
-!       enddo
-!        print *,'errmax',errmax
-!       print *,'NMSHW0',NMSH
-!
-!       deltax=5.24d0/40.0d0
-!       rrx=-5.24d0
-!       do ii=1,81
-!          NMSH=NMSH+1
-!          RMSH(1,NMSH)=rrx+(ii-1)*deltax
-!          RMSH(2,NMSH)=0.0d0
-!          RMSH(3,NMSH)=0.0d0
-!          WMSH(NMSH)=0.0d0
-!       enddo
-
-
-!       open(197,file='griddata.xyz')
-!       do i=1,NMSH
-!       write(197,*)(RMSH(j,i),j=1,3)
-!       enddo
-
-
-!       call  sort_grid_by_distance
-!
-!
-!
-!       dist=0.0d0
-!       do i=1,100
-!         xx=rmsh(1,i)
-!         yy=rmsh(2,i)
-!         zz=rmsh(3,i)
-!         dist=dsqrt(xx*xx+yy*yy+zz*zz)
-!         print*,(RMSH(j,i),j=1,3),WMSH(i),dist
-!       enddo
-
-!       do j=1,3
-!       print *,(TVEC(j,i),i=1,3)
-!       enddo
-!
-!       call stopit
-
-       NMSHW = NMSH
-       JMSH  = NMSH
-!       call coarse_grid
-! Replicating centrall cell mesh points in the Wannier Domain
-       open(20,file='UTRANS')
-       rewind(20)
-
-       do iwxx=1,10000
-          read(20,*,end=1011)nx,ny,nz
-          do ix=1,3
-             TV(ix)=nx*TVEC(ix,1)+ny*TVEC(ix,2)+nz*TVEC(ix,3)
+       open(21,file="UTRANS")
+       rewind(21)
+       DO IWXX=1,10000
+          READ(21,*,end=1012)nx,ny,nz
+          do j=1,3
+             TV(j)=nx*TVEC(j,1)+ny*TVEC(j,2)+nz*TVEC(j,3)
           enddo
           if(iraxis.eq.1)RANG=nx*atheta
           if(iraxis.eq.2)RANG=ny*atheta
           if(iraxis.eq.3)RANG=nz*atheta
 
-          do IMSH = 1,NMSHW
-             JMSH = JMSH+1
-             IF(JMSH.GT.MAX_PTS)THEN
-              print *,'MAX_PTS must be > JMSH',JMSH
-              call stopit
-             ENDIF
+          DO ii=1,NATMS
+             JMSH=JMSH+1
+             ZWATM(JMSH)=ZATMS(ii)
 
-             vin(1)=RMSH(1,IMSH)+TV(1)
-             vin(2)=RMSH(2,IMSH)+TV(2)
-             vin(3)=RMSH(3,IMSH)+TV(3)
+             vin(1)=ratm(1,ii)+TV(1)
+             vin(2)=ratm(2,ii)+TV(2)
+             vin(3)=ratm(3,ii)+TV(3)
 
              if(abs(RANG).gt.1.0d-10)then
              call rotvec(iraxis,RANG,vin,vout)
@@ -1698,96 +1652,15 @@ c
              vout(3)=vin(3)
              endif
 
-             RMSH(1,JMSH)=vout(1)
-             RMSH(2,JMSH)=vout(2)
-             RMSH(3,JMSH)=vout(3)
-             WMSH(JMSH)  =WMSH(IMSH)
-          enddo
-       enddo
- 1011  continue
-
-! MMSH1: Total mesh points in the Wannier Domain.
-! NDCELL1: Total cells in WD(BASIS)= Central cell+ WD.
-
-        MMSH1=JMSH
-        NDCELL=MMSH1/NMSHW
-        print *,'GRID POINTS IN WD (MMSH1),NDCELL',MMSH1,NDCELL
-
-! Adding mesh points to MMSH1 to include coordinates and Z values
-! of the atoms in the central cell with zero weights.
-
-       open(99,file='XMOL.DAT',status='old')
-       rewind(99)
-       read(99,*)natoms
-       read(99,*)
-       NATMS=0
-       do ii=1,natoms
-          read(99,*)dum,ratx,raty,ratz
-          if(abs(dum).gt.0.1d0)then
-          NATMS=NATMS+1
-          !Converting back to Bohr
-           ratm(1,NATMS)=ratx/0.529177D0
-           ratm(2,NATMS)=raty/0.529177D0
-           ratm(3,NATMS)=ratz/0.529177D0
-           ZATMS(NATMS)=dum
-           JMSH=JMSH+1
-           ZWATM(JMSH-MMSH1)=dum
-           RMSH(1,JMSH)=ratx/0.529177D0
-           RMSH(2,JMSH)=raty/0.529177D0
-           RMSH(3,JMSH)=ratz/0.529177D0
-           WMSH(JMSH)  =0.0D0
-          endif
-       enddo
-       close(99)
-
-
-       open(21,file="UTRANS")
-       rewind(21)
-       DO IWXX=1,10000
-         READ(21,*,end=1012)nx,ny,nz
-         do j=1,3
-            TV(j)=nx*TVEC(j,1)+ny*TVEC(j,2)+nz*TVEC(j,3)
-         enddo
-         if(iraxis.eq.1)RANG=nx*atheta
-         if(iraxis.eq.2)RANG=ny*atheta
-         if(iraxis.eq.3)RANG=nz*atheta
-
-         DO ii=1,NATMS
-            JMSH=JMSH+1
-            ZWATM(JMSH-MMSH1)=ZATMS(ii)
-
-            vin(1)=ratm(1,ii)+TV(1)
-            vin(2)=ratm(2,ii)+TV(2)
-            vin(3)=ratm(3,ii)+TV(3)
-
-            if(abs(RANG).gt.1.0d-10)then
-              call rotvec(iraxis,RANG,vin,vout)
-            else
-              vout(1)=vin(1)
-              vout(2)=vin(2)
-              vout(3)=vin(3)
-            endif
-
-            RMSH(1,JMSH)=vout(1)
-            RMSH(2,JMSH)=vout(2)
-            RMSH(3,JMSH)=vout(3)
-            WMSH(JMSH)  =0.0D0
-
+             ATWD(1,JMSH)=vout(1)
+             ATWD(2,JMSH)=vout(2)
+             ATWD(3,JMSH)=vout(3)
          ENDDO
        ENDDO
  1012  CONTINUE
-       close(20)
        close(21)
-       print *,'=================================================='
-       print *,'Number of Nuclie in WD:',JMSH-MMSH1
-       print *,'=================================================='
-       print *,'Nuclear Coordinates and ZWATM'
-       print *,'=================================================='
-       do jj=MMSH1+1,JMSH
-         print *,jj,(RMSH(k,jj),k=1,3),ZWATM(jj-MMSH1)
-       enddo
-       print *,'=================================================='
-
+       NDCELL= JMSH/NATMS
+       print *,'Total: Cells, Atoms:',NDCELL,JMSH
 ! Adding Angular mesh points to MMSH1 with zero weights.
 
         PRINT *,'CALLING ANGMSH max_ang',MAX_ANG
@@ -1802,18 +1675,13 @@ c
 ! 10.0d0 Bohr is the cusion to make sure we are outside all the charge.
 
         rad_sph = 60.0D0
+        JMSH = 0
         DO ipts = 1,NANG
           JMSH=JMSH+1
           DO ix=1,3
-          RMSH(ix,JMSH)=rad_sph*ANG(ix,ipts)
+          AMSH(ix,JMSH)=rad_sph*ANG(ix,ipts)
           ENDDO
-          WMSH(JMSH)=0.0D0
         ENDDO
-
-        NMSH=JMSH
-
-        print *,'rad_sph for SMULTI:',rad_sph
-        print *,'NMSH, MMSH1, NANG and NDCELL=',NMSH,MMSH1,NANG,NDCELL
 
 !C
 !C REORDER MESH POINTS

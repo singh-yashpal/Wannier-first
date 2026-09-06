@@ -1,0 +1,853 @@
+C 12 June 2025
+       SUBROUTINE CHIFIND
+       INCLUDE 'PARAMS'
+       INCLUDE 'commons.inc'
+       PARAMETER (NMAX=MPBLOCK)
+
+       LOGICAL ICOUNT,EXIST
+       CHARACTER*7 NAMES(3)
+       COMMON/TMP2/PSIG(NMAX,10,MAX_OCC)
+     &  ,PTS(NSPEED,3),GRAD(NSPEED,10,6,MAX_CON,3)
+     &  ,RVECA(3,MX_GRP),ICOUNT(MAX_CON,3)
+       DIMENSION   PSIBR(MPBLOCK,5*NDH),PSIB(MPBLOCK),
+     &             VOL(MPBLOCK),QR(3,MPBLOCK)
+       DIMENSION tv(3),cv(3),tr(2),homo(2),ghst(2),vin(3),vout(3)
+       DIMENSION HAMW(NDH,NDH),VER(NDH,NDH),OVERWD(NDH,NDH)
+c  ALAN
+       CHARACTER (len=150) :: linew
+       COMMON/MIXPOT/POTIN(MAX_PTS*MXSPN),POT(MAX_PTS*MXSPN)
+       COMMON/PTRANS/TVEC(3,3),atheta,iraxis,NXYZ,iwx,iwy,iwz
+       COMMON/REPLICA/NMSHW,NDCELL,MMSH1,NATMS,
+     &       ZWATM(1000),RATMS(3,1000),ITSCF
+C
+C SCRATCH COMMON BLOCK FOR LOCAL ARRAYS
+C
+       LOGICAL LGGA,IUPDAT,FILE_EXISTS
+       DIMENSION ISIZE(3),DOTS(100,100),moc(100,2)
+       DATA ISIZE/1,3,6/
+       DATA NAMES/'BROYPRJ','KBROY5','KBROY6'/
+
+       pi=4.0d0*atan(1.0d0)
+       ETOTOLD=0.0d0
+
+       INQUIRE(FILE='MUNS', EXIST=FILE_EXISTS)
+       IF (FILE_EXISTS) THEN
+         OPEN(90, FILE='MUNS', STATUS='OLD')
+         READ(90, *)
+         READ(90, *) ITEST
+         CLOSE(90)
+
+         IF (ITEST .EQ. 4) THEN
+            ISTSCF = 2
+            CALL READWF(FAILED)
+            CALL APOTNL(TOTQNUM)
+            DO ISPN = 1, NSPN
+               CALL OVERLAP(2)
+            ENDDO
+         ENDIF
+       ELSE
+         CALL SYSTEM("cp RUNS MUNS")
+       ENDIF
+
+      !goto 119
+
+       INQUIRE(FILE='UTRANS',EXIST=EXIST)
+       IF(.NOT.EXIST)RETURN
+                  IF(MPBLOCK.NE.NMAX)THEN
+                  PRINT*,'MPBLOC MUST BE:',NMAX
+                  CALL STOPIT
+                  END IF
+
+       linew=repeat('-',125)
+
+        OPEN(311,FILE='EVALW',STATUS='UNKNOWN',FORM='FORMATTED')
+        REWIND(311)
+        WRITE(311,'(A)') TRIM(linew)
+        WRITE(311,1021)
+        WRITE(311,'(A)') TRIM(linew)
+
+ 1021   FORMAT(2X,'IT',8X,'EKINONL',8X,'ECOUL',11X,'EXC',
+     &        11X,'ENNUCW',8X,'ELOCALW',9X,'ELATSUM',
+     &        8X,'EZNUCLAT',6X,'ETOTAL')
+
+        TOLERRDOT=1.0D-4
+        NCHIF = 20
+        inloop=5
+        FCT =-1.0D0
+
+!========================================================================
+
+       DO 3000 ITSCF=-1,-15,-1
+c  nmshw = central cell
+       if(NXYZ.eq.1)then
+       iwdx=iwx+2
+       iwdy=0
+       iwdz=0
+       endif
+
+       if(NXYZ.eq.2)then
+       iwdx=iwx+2
+       iwdy=iwy+2
+       iwdz=0
+       endif
+
+       if(NXYZ.eq.3)then
+       iwdx=iwx+1
+       iwdy=iwy+1
+       iwdz=iwz+1
+       endif
+
+       jmsh=nmshw
+       do ix=-iwdx,iwdx
+       do iy=-iwdy,iwdy
+       do iz=-iwdz,iwdz
+          if(ix.eq.0.and.iy.eq.0.and.iz.eq.0) goto 197
+          do imsh=1,nmshw
+             jmsh = jmsh+1
+             do j=1,3
+             TV(j)=ix*TVEC(j,1)+iy*TVEC(j,2)+iz*TVEC(j,3)
+             enddo
+             IF(iraxis.EQ.1)RANG=ix*atheta
+             IF(iraxis.EQ.2)RANG=iy*atheta
+             IF(iraxis.EQ.3)RANG=iz*atheta
+
+             vin(1)=RMSH(1,imsh)+TV(1)
+             vin(2)=RMSH(2,imsh)+TV(2)
+             vin(3)=RMSH(3,imsh)+TV(3)
+
+                if(abs(RANG).gt.1.0d-10)then
+                call rotvec(iraxis,RANG,vin,vout)
+                else
+                vout(1)=vin(1)
+                vout(2)=vin(2)
+                vout(3)=vin(3)
+                endif
+             rmsh(1,jmsh)=vout(1)
+             rmsh(2,jmsh)=vout(2)
+             rmsh(3,jmsh)=vout(3)
+             wmsh(jmsh) = wmsh(imsh)
+          end do
+  197     continue 
+       end do
+       end do
+       end do
+
+       mmsh1_sav=mmsh1
+       mmsh1=jmsh
+
+c  Alan  -- put in spin loop
+       DO 2500 ISPNX = 1,NSPN
+c  Alan try to get correct HSTOR
+          PRINT*,'ISPN:',ISPNx
+               OPEN(99,FILE='HAMOLD',FORM='UNFORMATTED',STATUS='OLD')
+               REWIND(99)
+               READ(99)NREC,MXXX
+               DO JSPN=1,ISPNX
+               READ(99)(HSTOR(IREC,2),IREC=1,NREC)
+               END DO
+               CLOSE(99)
+          PRINT *, '      ispnx', ispnx
+          PRINT *, 'nwfs(ispnx)',nwfs(ispnx)
+          PRINT *, ' '
+          PRINT *, '==================================================='
+          PRINT *, ' '
+
+       DO 2000 ICHIFIND=0,NCHIF !Decision 
+       DO 1900 inner = 1,inloop
+          TIMEGORB=0.0D0
+          CALL GTTIME(APT1)
+          LGGA= .FALSE.
+          NGRAD=1
+C
+C LOOP OVER ALL POINTS
+C
+          DOT=0.0D0
+          HAM=0.0D0
+          ERRDOT=0.0D0
+          ERRMAX=0.0D0
+
+          OPEN(20,FILE='UTRANS')
+          REWIND(20)
+
+          OPEN(510,FILE='SITEFLO',FORM='UNFORMATTED')
+!===============================================================
+          DO 1000 IPXX=0,10000 !Decision   
+             REWIND(510)
+             DOTS = 0.0D0
+             OVER = 0.0D0
+             TV   = 0.0D0
+
+             IF(IPXX.NE.0)THEN
+               READ(20,*,END=1050)nx,ny,nz
+               DO ii=1,3
+               TV(ii)=nx*TVEC(ii,1)+ny*TVEC(ii,2)+nz*TVEC(ii,3)
+               ENDDO
+               IF(iraxis.EQ.1)RANG=nx*atheta
+               IF(iraxis.EQ.2)RANG=ny*atheta
+               IF(iraxis.EQ.3)RANG=nz*atheta
+
+               if(abs(RANG).gt.1.0d-10)then
+                 thetaf=RANG*(pi/180.0d0)
+                 cosw=cos(thetaf)
+                 sinw=sin(thetaf)
+               else
+                 cosw=1.0d0
+                 sinw=0.0d0
+               endif
+             ELSE
+
+               cosw=1.0d0
+               sinw=0.0d0
+             ENDIF
+             !if(ipxx.ne.0 .and. ITSCF.eq.-1)then
+             !print *,'sinw cosw',sinw,cosw
+             !endif
+             LPTS=0
+
+!=================================================================
+  10         CONTINUE
+             IF(LPTS+NMAX.LT.MMSH1)THEN
+             MPTS=NMAX
+             ELSE
+             MPTS=MMSH1-LPTS
+             END IF
+C
+C INITIALIZE PSIG
+C
+             DO IWF=1,NWF
+             DO IPTS=1,MPTS
+                PSIG(IPTS,1,IWF)=0.0D0
+             END DO
+             END DO  
+C
+C FOR ALL CENTER TYPES
+C
+             ISHELLA=0
+             DO 86 IFNCT=1,NFNCT
+                LMAX1=LSYMMAX(IFNCT)+1
+C
+C FOR ALL POSITIONS OF THIS CENTER
+C
+             DO 84 I_POS=1,N_POS(IFNCT)
+                ISHELLA=ISHELLA+1
+C
+C GET SYMMETRY INFO
+C
+                CALL OBINFO(1,RIDT(1,ISHELLA),RVECA,M_NUC,ISHDUM)
+
+                IF(NWF.GT.MAX_OCC)THEN
+                PRINT *,'APTSLV: MAX_OCC MUST BE AT LEAST:',NWF
+                CALL STOPIT
+                END IF
+C
+C FOR ALL EQUIVALENT POSITIONS OF THIS ATOM
+C
+             DO 82 J_POS=1,M_NUC
+
+C
+C UNSYMMETRIZE 
+C
+
+             CALL UNRAVEL(IFNCT,ISHELLA,J_POS,RIDT(1,ISHELLA),
+     &                    RVECA,L_NUC,1)
+ 107   format(10F8.4)
+
+             IF(L_NUC.NE.M_NUC)THEN
+             PRINT *,'APTSLV: PROBLEM IN UNRAVEL'
+             CALL STOPIT
+             END IF
+C
+C FOR ALL MESHPOINTS IN BLOCK DO A SMALLER BLOCK
+C
+             KPTS=0
+             DO 80 JPTS=1,MPTS,NSPEED
+               NPV=MIN(NSPEED,MPTS-JPTS+1)
+               DO LPV=1,NPV
+               KPTS=KPTS+1
+
+!               r1 = RMSH(1,LPTS+KPTS) - TV(1)
+!               r2 = RMSH(2,LPTS+KPTS) - TV(2)
+!               r3 = RMSH(3,LPTS+KPTS) - TV(3)
+!
+!               ! Rotation about x-axis
+!               if(iraxis.eq.1)then
+!               PTS(LPV,1) = r1 - RVECA(1,J_POS)
+!               PTS(LPV,2) = cosw*r2 + sinw*r3 - RVECA(2,J_POS)
+!               PTS(LPV,3) = -sinw*r2 + cosw*r3 - RVECA(3,J_POS)
+!               endif
+!
+!               ! Rotation about y-axis
+!               if(iraxis.eq.2)then
+!               PTS(LPV,1) = cosw*r1 + sinw*r3 - RVECA(1,J_POS)
+!               PTS(LPV,2) = r2 - RVECA(2,J_POS)
+!               PTS(LPV,3) = -sinw*r1 + cosw*r3 - RVECA(3,J_POS)
+!               endif
+!
+!               ! Rotation about z-axis
+!               if(iraxis.eq.3)then
+!               PTS(LPV,1) = cosw*r1 + sinw*r2 - RVECA(1,J_POS)
+!               PTS(LPV,2) = -sinw*r1 + cosw*r2 - RVECA(2,J_POS)
+!               PTS(LPV,3) = r3 - RVECA(3,J_POS)
+!               endif
+
+
+
+               ! Rotation is about x-axis
+               if(iraxis.eq.1)then
+               PTS(LPV,1)=RMSH(1,LPTS+KPTS)-RVECA(1,J_POS)-TV(1)
+               PTS(LPV,2)=cosw*RMSH(2,LPTS+KPTS)+sinw*RMSH(3,LPTS+KPTS)
+     &                     -RVECA(2,J_POS)-TV(2)
+               PTS(LPV,3)=-sinw*RMSH(2,LPTS+KPTS)+cosw*RMSH(3,LPTS+KPTS)
+     &                     -RVECA(3,J_POS)-TV(3)
+               endif
+
+               ! Rotation is about y-axis
+               if(iraxis.eq.2)then
+               PTS(LPV,1)=cosw*RMSH(1,LPTS+KPTS)+sinw*RMSH(3,LPTS+KPTS)
+     &                     -RVECA(1,J_POS)-TV(1)
+               PTS(LPV,2)=RMSH(2,LPTS+KPTS)-RVECA(2,J_POS)-TV(2)
+               PTS(LPV,3)=-sinw*RMSH(1,LPTS+KPTS)+cosw*RMSH(3,LPTS+KPTS)
+     &                     -RVECA(3,J_POS)-TV(3)
+               endif
+
+               ! Rotation is about z-axis
+               if(iraxis.eq.3)then
+               PTS(LPV,1)=cosw*RMSH(1,LPTS+KPTS)+sinw*RMSH(2,LPTS+KPTS)
+     &                     -RVECA(1,J_POS)-TV(1)
+               PTS(LPV,2)=-sinw*RMSH(1,LPTS+KPTS)+cosw*RMSH(2,LPTS+KPTS)
+     &                     -RVECA(2,J_POS)-TV(2)
+               PTS(LPV,3)=RMSH(3,LPTS+KPTS)-RVECA(3,J_POS)-TV(3)
+               endif
+
+               QR (1,KPTS)=RMSH(1,LPTS+KPTS)
+               QR (2,KPTS)=RMSH(2,LPTS+KPTS)
+               QR (3,KPTS)=RMSH(3,LPTS+KPTS)
+               END DO
+C
+C GET ORBITS AND DERIVATIVES
+C
+                NDERV=0
+C            IF (LGGA) NDERV=2
+                CALL GTTIME(TIME3)
+                CALL GORBDRV(NDERV,IUPDAT,ICOUNT,NPV,PTS,IFNCT,GRAD)
+                CALL GTTIME(TIME4)
+                TIMEGORB=TIMEGORB+TIME4-TIME3
+C
+C UPDATING ARRAY PSIG
+C
+c               print *, 'checking psi for both spins'
+c               if(i_pos.eq.1) then
+c               print *, 'atom A'
+c               do iwf = 1,NWF
+c                 print *, iwf,(psi(iloc,iwf,1), iloc = 1,8)
+c               end do
+c               end if
+c               if(i_pos.eq.2) then
+c               print *, 'atom B'
+c               do iwf = 1,NWF
+c                 print *, iwf,(psi(iloc,iwf,1), iloc = 1,8)
+c               end do
+c               end if
+
+                IF (IUPDAT) THEN
+                IPTS=JPTS-1
+                ILOC=0
+                DO 78 LI=1,LMAX1
+                   DO MU=1,ISIZE(LI)
+                   DO ICON=1,N_CON(LI,IFNCT)
+                      ILOC=ILOC+1
+c Alan update for spin
+                      IF (ICOUNT(ICON,LI)) THEN
+                      DO IWF=1,NWFS(ispnx) 
+                         FACTOR=PSI(ILOC,(ispnx-1)*NWFS(1)+IWF,1)
+                      DO IGR=1,1!NGRAD !Decision
+                      DO LPV=1,NPV
+                         PSIG(IPTS+LPV,IGR,IWF)=PSIG(IPTS+LPV,IGR,IWF)
+     &                   +FACTOR*GRAD(LPV,IGR,MU,ICON,LI)
+                      END DO
+                      END DO  
+                      END DO  
+                      END IF
+                   END DO  
+                   END DO  
+   78           CONTINUE
+                END IF
+   80        CONTINUE  !JPTS
+
+   82        CONTINUE !J_POS
+   84        CONTINUE !I_POS
+   86        CONTINUE !IFNCT
+
+
+             DO IWF=1,NWFS(ispnx)
+             DO IPTS=1,MPTS
+                PSIG(IPTS,2,IWF)=PSIG(IPTS,1,IWF)*WMSH(IPTS+LPTS)
+             END DO
+             END DO
+
+             IF(IPXX.EQ.0)THEN
+             WRITE(510)((PSIG(IPTS,1,IWF),IPTS=1,MPTS),
+     &                               IWF=1,NWFS(ispnx))
+             ELSE
+             READ (510)((PSIG(IPTS,1,IWF),IPTS=1,MPTS),
+     &                               IWF=1,NWFS(ispnx))
+             END IF
+
+C UPDATE OVERLAPS:
+             DO IWF=1  ,NWFS(ispnx)
+             DO JWF=1  ,NWFS(ispnx)
+             DO IPTS=1,MPTS
+                DOTS(JWF,IWF)=DOTS(JWF,IWF)+
+     &                        PSIG(IPTS,2,IWF)*PSIG(IPTS,1,JWF)
+             END DO
+             END DO
+             END DO
+
+
+C CALL GETBAS
+             DO KREP=1,N_REP
+!               CALL GETBAS(LSETUP,MPTS,JGP,QR,PSIBR,JREP,NBAS)
+                CALL AGETBAS(MPTS,1,QR,PSIBR,KREP,NBAS)
+C IS NBAS SUM_IREP NS_TOT(I_REP)*NDIM(I_REP) or NS_TOT(I_REP) ?
+                DO IBAS=1,NBAS
+                DO IWF=1,NWFS(ispnx)
+                DO IPTS=1,MPTS
+                   OVER(IWF,IBAS)=OVER(IWF,IBAS)
+     &                          +PSIG(IPTS,2,IWF)*PSIBR(IPTS,IBAS)
+                END DO
+                END DO
+                END DO
+             END DO
+
+
+             LPTS=LPTS+MPTS
+             IF (LPTS.LT.MMSH1) GOTO 10
+
+             !do ix=1,10
+             !print '(10f12.4)',(OVER(jx,ix),jx=1,10)
+             !enddo
+!=================================================================
+             IF(IPXX.GT.0)THEN
+             DO IWF=1,NWFS(ispnx) !Decision 
+             DO JWF=1,NWFS(ispnx)   
+                ERRDOT=ERRDOT+ABS(DOTS(IWF,JWF))
+                ERRMAX=MAX(ABS(DOTS(IWF,JWF)),ERRMAX)
+             END DO
+             END DO
+             END IF
+
+             FCT2=1.0D0
+             GCT=FCT
+             IF(IPXX.NE.0)GCT=FCT2    
+             DO IBAS=1,NBAS
+             DO JBAS=1,NBAS !lower triangular matrix?
+             DO IWF=1,NWFS(ispnx)
+!HAM is a CHI Finding operater here Eq 45 PRB 1987!
+                HAM(JBAS,IBAS)=HAM(JBAS,IBAS)+
+     &                       OVER(IWF,IBAS)*OVER(IWF,JBAS)*GCT
+             END DO
+             END DO
+             END DO
+
+             IF(ipxx.eq.0) then
+                open(unit=50,file='scissor0',form='unformatted')
+                write(50) nbas
+                write(50)HAM !((HAM(jbas,ibas),ibas=1,nbas),jbas=ibas,nbas)
+                close(50)
+             ENDIF
+
+ 1000    CONTINUE !IPXX LOOP ENDS HERE
+ 1050    CONTINUE
+         CLOSE(20)
+
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C MATRIX TO DIAGONALISE:
+!      DO IBAS=1,17    
+!      PRINT '(20F10.3)',(ABS(HAM(JBAS,IBAS)),JBAS=1,17)
+!      END DO
+C      PRINT*,'DIAGONAL XI-FINDING ELEMENTS:'
+       PRINT*,'ERRDOT, ERRMAX:',ERRDOT,ERRMAX
+       !PRINT '(15F12.5)',(HAM(IBAS,IBAS),IBAS=1,NWF)
+C      PRINT*,(OVER(1,IBAS),IBAS=1,NBAS)
+
+!       IF(ITSCF.eq.-1)THEN
+       CALL OVERLAP(1)
+!       OVERWD = 0.0D0
+       OVER   = 0.0D0
+       IREC=0
+       DO IBAS=1   ,NBAS
+       DO JBAS=IBAS,NBAS
+          IREC=IREC+1
+          OVER(JBAS,IBAS)   =HSTOR(IREC,1)
+!          OVERWD(JBAS,IBAS) =HSTOR(IREC,1)
+!          OVERWD(IBAS,JBAS) =HSTOR(IREC,1)
+       END DO
+       END DO
+!       ELSE
+!       DO IBAS=1,NBAS
+!       DO JBAS=IBAS,NBAS
+!          OVER(JBAS,IBAS)=OVERWD(JBAS,IBAS)
+!          OVER(IBAS,JBAS)=OVERWD(JBAS,IBAS)
+!       END DO
+!       END DO
+!       ENDIF
+
+c Diagonalizging Xi-Finding operator
+! Solve the generalized eigenvalue problem A*x = lambda*B*x.
+!call dsygv(itype, jobz, uplo, n, A, n, B, n, W, work, lwork, info)
+! Set problem type: 1 corresponds to A*x = lambda*B*x.
+!  itype = 1
+!  jobz = 'V'   ! Compute eigenvalues and eigenvectors.
+!  uplo = 'U'   ! We use the upper triangle of A and B.
+
+!call DSYGV(ITYPE, JOBZ, UPLO, N, A, NA, B, NA, W, WORK, LWORK, INFO)
+! The work array SC1 has to be dimensioned 3*NBAS in DSYGV 
+
+       MDH=3*NBAS
+       !CALL DIAGGE(NDH,NBAS,HAM,OVER,EVAL,SC1,1)
+       CALL DSYGV(1,'V','L',NBAS,HAM,NDH,OVER,NDH,EVAL,SC1,MDH,info)
+       if (INFO /= 0) then
+          print*, "Workspace query failed, INFO =", INFO
+          call stopit
+       endif
+
+       PRINT*,'XI-FIND EIGENVALUES:',ispnx,ICHIFIND,FCT2,ERRDOT,ERRMAX
+       PRINT*,'CHIFIND: MMSH1, NBAS:',MMSH1,NBAS
+       PRINT '(8F15.6)',(EVAL(IBAS)   ,IBAS=1,NBAS)
+       CALL FLUSH(6)
+
+C move eigenvectors to OVER
+        MBAS=0
+        OVER = 0.0D0
+        DO IBAS=1,NBAS
+           IF(EVAL(IBAS).LT.1.0D-4)THEN
+           MBAS=MBAS+1
+           DO JBAS=1,NBAS
+              OVER(JBAS,MBAS)=HAM(JBAS,MBAS)
+           END DO
+           ENDIF
+        END DO
+        print "('diagnostics ',5g12.3,10g15.6)", 
+     &      errdot, errmax, abs(fct),
+     &      errold/errdot, float(ispnx),tr,ETOTAL,
+     &      homo(1),ghst(1),homo(2),ghst(2)
+        errold=errdot
+      
+        DO IWF=1,NWFS(ispnx)  
+        DO IBAS=1,NBAS
+           PSI_COEF(IBAS,IWF,1,ispnx)=OVER(IBAS,IWF) !/SQRT(EVAL(IWF))
+        END DO
+        END DO
+        CLOSE(510)
+        IF(ERRDOT.LT.TOLERRDOT) GOTO 1901
+ 1900   CONTINUE  ! inner loop
+ 1901   CONTINUE
+ 
+        HAM=0.0D0
+        open(unit=50,file='scissor0',form='unformatted')
+        rewind(50)
+        read(50) nbas
+        read(50) HAM !((HAMW(jbas,ibas),ibas=1,nbas),jbas=ibas,nbas)
+        close(50)
+
+        do ibas=1,nbas
+        do jbas = ibas,nbas
+          HAM(ibas,jbas) = HAM(jbas,ibas)
+        end do
+        end do
+
+!        if(itscf.gt.-3)then
+!        eshift= 0.6d0/abs(FCT)
+!        else
+        eshift=0.0d0
+!        endif
+
+        IREC=0 
+        DO IBAS=1   ,NBAS
+        DO JBAS=IBAS,NBAS
+           IREC=IREC+1
+           HAM(JBAS,IBAS)=HSTOR(IREC,2)+eshift*HAM(JBAS,IBAS)
+           HAM(IBAS,JBAS)=HAM(JBAS,IBAS)
+        END DO
+        END DO
+
+        DO IBAS=1,NWFS(ispnx) 
+           DOT=0.0D0
+           DO KBAS=1,NBAS
+           DO LBAS=1,NBAS
+              DOT=DOT+OVER(KBAS,IBAS)*OVER(LBAS,IBAS)*HAM(LBAS,KBAS)
+           END DO
+           END DO
+           PRINT*,'DIAGONAL PRE',IBAS,MBAS,DOT
+        END DO
+
+C=======================================================================
+C CONTRACT HAMILTONIAN
+C Wannier Hamiltonian HAMW=(1-P)H_0(1-P)
+C=======================================================================
+        HAMW=0.0D0
+        DO IBAS=1,MBAS
+           DO LBAS=1,NBAS
+           SC1(LBAS)=0.0D0
+           DO KBAS=1,NBAS 
+           SC1(LBAS)=SC1(LBAS)+OVER(KBAS,IBAS)*HAM(KBAS,LBAS)
+           ENDDO 
+           ENDDO 
+
+           DO JBAS=IBAS,MBAS
+           DO LBAS=1,NBAS
+           HAMW(JBAS,IBAS)=HAMW(JBAS,IBAS)+SC1(LBAS)*OVER(LBAS,JBAS)
+           ENDDO
+           ENDDO
+        ENDDO
+
+        PRINT *, 'ispn,nwf',ispnx,nwf
+
+        DO IBAS=1,NWFS(ispnx) 
+        PRINT '(10F12.6)',(HAMW(JBAS,IBAS),JBAS=1,NWF)
+        END DO
+
+        VER=0.0D0
+        DO IBAS=1,MBAS
+           VER(IBAS,IBAS)=1.0D0
+        ENDDO
+
+        EVAL=0.0d0
+        SC1=0.0d0
+
+        MDH=3*MBAS
+        !CALL DIAGGE(NDH,MBAS,HAMW,VER,EVAL,SC1,1)
+        CALL DSYGV(1,'V','L',MBAS,HAMW,NDH,VER,NDH,EVAL,SC1,MDH,info)
+        if (INFO /= 0) then
+        print*, "Workspace 2 query failed, INFO =", INFO
+        call stopit
+        end if
+
+        PRINT '(A,12F12.6)','EVALW',(EVAL(I),I=1,10)
+        homo(ispnx) = eval(nwfs(ispnx))+eshift
+        ghst(ispnx) = eval(nwfs(ispnx)+1)
+        tr(ispnx)   =  eshift*nwfs(ispnx) 
+        DO iwf=1,nwfs(ispnx)
+           tr(ispnx)=tr(ispnx)+EVAL(iwf) 
+        ENDDO
+
+        TRACE=EVAL(1)+EVAL(2)+EVAL(3)+EVAL(4)+EVAL(5)+EVAL(6)
+        
+C DECONTRACT
+        DO IWF=1,NWFS(ispnx)    !NWF
+           DO JBAS=1,NBAS
+              HAM(JBAS,IWF)=0.0D0
+           ENDDO          
+C |FLO_I>= SUM_J HAMW(J,I)*|W_J> 
+C          SUM_JK HAMW(J,I)*OVER(K,J)*|BK>
+           DO JBAS=1,MBAS
+           DO KBAS=1,NBAS
+             HAM(KBAS,IWF)=HAM(KBAS,IWF)+HAMW(JBAS,IWF)*OVER(KBAS,JBAS)
+           ENDDO
+           ENDDO
+        ENDDO
+        DO IWF=1,NWFS(ispnx)
+        DO IBAS=1,NBAS
+           PSI_COEF(IBAS,IWF,1,ispnx)=HAM(IBAS,IWF) 
+        ENDDO
+        ENDDO
+
+!        print *,'state1'
+!        print '(5F12.8,1X)', (PSI_COEF(ibas,1,1,ispnx), ibas = 1, nbas)
+!        print *,'state6'
+!        print '(5F12.8,1X)', (PSI_COEF(ibas,6,1,ispnx), ibas = 1, nbas)
+!        call stopit
+C======================================================================
+!       PRINT *,'ITSCFloop',ITSCF
+!       OVER =0.0d0
+!       DO IWF=1,8!NWF
+!       DO JWF=IWF,8!NWF
+!          DO JBAS=1,NBAS
+!          DO KBAS=1,NBAS
+!             OVER(JWF,IWF)=OVER(JWF,IWF)+PSI_COEF(JBAS,IWF,1,1)*
+!     &       OVERWD(JBAS,KBAS)*PSI_COEF(KBAS,JWF,1,1)
+!          ENDDO
+!          ENDDO
+!       ENDDO
+!       print *,'overlapwf',(OVER(JWF,IWF),JWF=1,8)
+!       ENDDO
+!======================================================================
+
+        IF(ERRDOT.LT.TOLERRDOT.AND.ICHIFIND.GT.1)GOTO 2001
+ 2000   CONTINUE !ICHIFIND
+ 2001   CONTINUE
+        PRINT*,'ERRDOTF, ERRMAXF:',ERRDOT,ERRMAX
+
+        PRINT '(A,12F12.6)','EVALWF',(EVAL(I),I=1,9)
+        PRINT *,'MBAS at ITER',ITSCF,'=',MBAS
+
+!       OVER =0.0d0
+!       DO IWF=1,NWF
+!       DO JWF=IWF,NWF
+!          DO JBAS=1,NBAS
+!          DO KBAS=1,NBAS
+!             OVER(JWF,IWF)=OVER(JWF,IWF)+PSI_COEF(JBAS,IWF,1,1)*
+!     &       OVERWD(JBAS,KBAS)*PSI_COEF(KBAS,JWF,1,1)
+!          ENDDO
+!          ENDDO
+!       ENDDO
+!       print *,'overlapwf',(OVER(JWF,IWF),JWF=1,NWF)
+!       ENDDO
+!       CALL STOPIT
+ 2500   CONTINUE   !ispnx
+
+        mmsh1=mmsh1_sav
+        ndum = nmsh
+
+        OPEN(99,file='VMOLD',form='unformatted')
+        REWIND(99)
+        READ(99)NMSH,ICALC
+        PRINT *, 'nmsh ndum',nmsh, ndum
+        IF(nmsh.ne.ndum)THEN
+           call stopit
+        ENDIF
+        READ(99)((RMSH(J,I),J=1,3),I=1,NMSH)
+        READ(99)(WMSH(I),I=1,NMSH)
+        CLOSE(99)
+
+        ISTSCF= 2 !ITTS+1
+        CALL WFOUT
+        CALL READWF(FAILED)
+        CALL APOTNL(TOTQNUM)
+        CALL GTENRGY
+
+        PRINT *,'================================='
+        PRINT *,'EKINONL',EKINONL
+        PRINT *,'ECOUL',ECOUL
+        EXC = ERGXL+ERGXN+ERGCL+ERGCN
+        PRINT *,'EXC',EXC
+        PRINT *,'ELOCALW (e-N,WD)',ELOCALW
+        PRINT *,'ENNUCW (N-N,WD)',ENNUCW
+        PRINT *,'ELATSUM',ELATSUM
+        PRINT *,'EZNUCLAT',EZNUCLAT
+        PRINT *,'EOUTWD',EZNUCLAT+ELATSUM
+
+        ETOTAL=EKINONL+ECOUL+EXC+ENNUCW+ELOCALW+ELATSUM+EZNUCLAT
+        PRINT *,'================================='
+        PRINT *,'TOTAL ENERGY=',ETOTAL
+        PRINT *,'================================='
+
+!NOTE: NEEDED TO AVOID NEGATIVE IPTR IN NUMHAM SUBROUTINE WHEN
+!Making ISPN=2 AFTER CALL APOTNL
+
+        DO ISPN=1,NSPN
+           CALL OVERLAP(2)
+        ENDDO
+!        CALL MIXING ? Decision
+
+        WRITE(311,1022)ITSCF,EKINONL,ECOUL,EXC,
+     &           ENNUCW,ELOCALW,ELATSUM,EZNUCLAT,ETOTAL
+ 1022 FORMAT(1X,I3,10(1X,F14.6))
+
+       EDIFF=ABS(ETOTAL-ETOTOLD)
+       if(EDIFF.LT.1.0D-5)GOTO 3001
+       ETOTOLD = ETOTAL
+
+ 3000  CONTINUE   !iteration loop
+
+ 3001  CONTINUE  
+
+
+!        print *,'state1'
+!        print '(5F12.8,1X)', (PSI_COEF(ibas,1,1,ispnx), ibas = 1, nbas)
+!        print *,'state6'
+!        print '(5F12.8,1X)', (PSI_COEF(ibas,6,1,1), ibas = 1, nbas)
+
+
+!        PRINT *,'Calling WFGRID'
+!        call flush(6)
+!        CALL WFGRID
+!        call flush(6)
+!
+        print *,'calling bandstructure'
+
+
+        !goto 129
+c  nmshw = central cell
+       jmsh=nmshw
+       do ix=-iwdx,iwdx
+       do iy=-iwdy,iwdy
+       do iz=-iwdz,iwdz
+          if(ix.eq.0.and.iy.eq.0.and.iz.eq.0) goto 199
+          do imsh=1,nmshw
+             jmsh = jmsh+1
+             do j=1,3
+                TV(j)=ix*TVEC(j,1)+iy*TVEC(j,2)+iz*TVEC(j,3)
+             enddo
+             IF(iraxis.EQ.1)RANG=ix*atheta
+             IF(iraxis.EQ.2)RANG=iy*atheta
+             IF(iraxis.EQ.3)RANG=iz*atheta
+
+             vin(1)=RMSH(1,IMSH)+TV(1)
+             vin(2)=RMSH(2,IMSH)+TV(2)
+             vin(3)=RMSH(3,IMSH)+TV(3)
+
+             if(abs(RANG).gt.1.0d-10)then
+             call rotvec(iraxis,RANG,vin,vout)
+             else
+             vout(1)=vin(1)
+             vout(2)=vin(2)
+             vout(3)=vin(3)
+             endif
+             rmsh(1,jmsh)=vout(1)
+             rmsh(2,jmsh)=vout(2)
+             rmsh(3,jmsh)=vout(3)
+             wmsh(jmsh) = wmsh(imsh)
+          end do
+  199     continue
+       end do
+       end do
+       end do
+
+       print *,'NMSH, JMSH, NMSHW',NMSH,JMSH,NMSHW
+
+        INQUIRE(FILE='POTOLD',EXIST=EXIST)
+        IF (.NOT.EXIST) THEN
+         PRINT *,'POTOLD DOES NOT EXIST'
+         CALL STOPIT
+        END IF
+        OPEN(99,FILE='POTOLD',FORM='UNFORMATTED',STATUS='OLD')
+        REWIND(99)
+        READ(99,END=20)MPTS,MSPN,NDUM
+        IF (MPTS.NE.NMSH) THEN
+         PRINT *,'NMSH IN POTOLD DIFFERS FROM CURRENT JOB'
+         PRINT*,'MPTS,NMSH=',MPTS,NMSH,MSPN,NDUM
+         CALL STOPIT
+        END IF
+
+        KPTS=NMSH*MIN(MSPN,NSPN)
+        READ(99,END=20)(POTIN(IPTS), IPTS=1,KPTS)
+        GOTO 30
+   20   PRINT *,'POTOLD UNREADABLE'
+        CALL STOPIT
+   30   CLOSE(99)
+
+        print *,'MPTS,KPTS',MPTS,KPTS
+
+        ifak=NSPN-1
+
+        do ix=1,2*iwx+1
+           ic=ix-1
+        do imsh=1,nmshw
+           POT(ic*nmshw+imsh)=POTIN(imsh)
+           POT(imsh+ifak*jmsh+ic*nmshw)=POTIN(imsh+ifak*nmsh)
+        enddo
+        enddo
+
+        OPEN(99,FILE='POTOLD',FORM='UNFORMATTED',STATUS='UNKNOWN')
+        REWIND(99)
+        WRITE(99)JMSH,NSPN,ITER
+        WRITE(99)(POT(IPTS), IPTS=1,JMSH*NSPN)
+        CLOSE(99)
+
+ 129    continue
+ 119    continue
+        CALL bandw
+        CLOSE(311)
+        call stopit
+       END
